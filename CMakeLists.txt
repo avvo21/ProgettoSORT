@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_FLAGS "-O3 -Wall -pthread")
 
 # Libreria statica precompilata
-add_library(rt_pthread STATIC IMPORTED)
+add_library(rt_pthread STATIC rt/rt_pthread.cpp)
 set_target_properties(rt_pthread PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/rt/librt_pthread.a")
 
 # Eseguibili
