@@ -9,7 +9,7 @@
 #include "rt/priority.h"
 #include "rt/affinity.h"
 
-std::mutex Executive::task_mutex;
+std::mutex Executive::task_mutex;//
 std::vector<std::unique_ptr<std::condition_variable>> Executive::cond; //TODO: capire come fare ad inizializzare il vettore di cond
 
 Executive::Executive(size_t num_tasks, unsigned int frame_length, unsigned int unit_duration)
