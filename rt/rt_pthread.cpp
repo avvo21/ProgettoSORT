@@ -62,8 +62,14 @@ static void set_priority(pthread_t pthread_id, const priority & p)
 		
 	if (res != 0)
 	{
+		/* Modifica aggiunta per l'esecuzione su MacOS, nel caso di problemi la versione linux è quella commentata
+		 * NB: non rimuovere il commento
 		char msg[30];
 		throw permission_error(strerror_r(res, msg, 30));
+		*/
+		char msg[30];
+		strerror_r(res, msg, sizeof(msg));
+		throw permission_error(msg);
 	}
 }
 
