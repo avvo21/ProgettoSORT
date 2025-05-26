@@ -85,7 +85,7 @@ void Executive::ap_task_request()
 	 * Si deve fare in modo che l'exec sappia che è stata fatta una request, bool, per poi attivare la politica dell'aperiodico
 	 * alla fine dell'esecuzione si riporta a false
 	 *
-	 * Usare due bool, uno per un aperiodico in esecuzione e uno per una richiesta di aperiodico
+	 * Usare un bool per una richiesta di aperiodico e fare in modo di capire se un task aperiodico è già in esecuzione senza bool
 	 *
 	 * Qui dobbiamo semplicemente fare un lock e settare la variabile della richiesta a true
 	 *
