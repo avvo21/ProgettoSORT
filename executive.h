@@ -24,6 +24,12 @@ class Executive
 			wcet: tempo di esecuzione di caso peggiore (in quanti temporali).
 		*/
 		void set_periodic_task(size_t task_id, std::function<void()> periodic_task, unsigned int wcet);
+
+		/* [INIT] Imposta il task aperiodico (da invocare durante la creazione dello schedule):
+				aperiodic_task: funzione da eseguire al rilascio del task;
+				wcet: tempo di esecuzione di caso peggiore (in quanti temporali).
+			*/
+		void set_aperiodic_task(std::function<void()> aperiodic_task, unsigned int wcet);
 		
 		/* [INIT] Lista di task da eseguire in un dato frame (da invocare durante la creazione dello schedule):
 			frame: lista degli id corrispondenti ai task da eseguire nel frame, in sequenza
@@ -36,10 +42,16 @@ class Executive
 		/* [RUN] Attende (all'infinito) finchè gira l'applicazione */
 		void wait();
 
+		/* [RUN] Richiede il rilascio del task aperiodico (da invocare durante l'esecuzione).
+		*/
+		void ap_task_request();
+
 	private:
 		struct task_data
 		{
 			std::function<void()> function;
+
+			unsigned int wcet;
 
 			std::thread thread;
 
@@ -53,6 +65,8 @@ class Executive
 		};
 		
 		std::vector<task_data> p_tasks;
+
+		task_data ap_task;
 		
 		std::thread exec_thread;
 		

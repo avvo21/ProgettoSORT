@@ -14,3 +14,6 @@ target_link_libraries(application_1 rt_pthread pthread rt)
 
 add_executable(application_2 application_2.cpp executive.cpp busy_wait.cpp)
 target_link_libraries(application_2 rt_pthread pthread rt)
+
+add_executable(application_3 application_3.cpp executive.cpp busy_wait.cpp)
+target_link_libraries(application_3 rt_pthread pthread rt)

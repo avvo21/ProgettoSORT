@@ -29,6 +29,12 @@ void Executive::set_periodic_task(size_t task_id, std::function<void()> periodic
 	
 	p_tasks[task_id].function = periodic_task;
 }
+
+void Executive::set_aperiodic_task(std::function<void()> aperiodic_task, unsigned int wcet)
+{
+	ap_task.function = aperiodic_task;
+	ap_task.wcet = wcet;
+}
 		
 void Executive::add_frame(std::vector<size_t> frame) // frame contine gli indici dei task, quindi è un singlolo frame
 {
@@ -58,6 +64,10 @@ void Executive::start()
 		
 		/* ... */
 	}
+
+	assert(ap_task.function); // Fallisce se set_aperiodic_task() non e' stato invocato
+
+	ap_task.thread = std::thread(&Executive::task_function, std::ref(ap_task));
 	
 	exec_thread = std::thread(&Executive::exec_function, this);
 	rt::set_priority(exec_thread, p);
@@ -71,6 +81,11 @@ void Executive::wait()
 	
 	for (auto & pt: p_tasks)
 		pt.thread.join();
+}
+
+void Executive::ap_task_request()
+{
+	/* ... */
 }
 
 void Executive::task_function(Executive::task_data & task)
@@ -151,7 +166,7 @@ void Executive::exec_function()
 		for (size_t n = 0; n< frames[frame_id].size(); ++n)
 		{
 			auto task_id = frames[frame_id][n];
-			if (p_tasks[task_id].state == task_data::RUNNING)
+			if (p_tasks[task_id].state == task_data::RUNNING)	//TODO
 			{
 				deadline_miss.push_back(task_id);
 
