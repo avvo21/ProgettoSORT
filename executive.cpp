@@ -10,11 +10,16 @@
 #include "rt/affinity.h"
 
 std::mutex Executive::task_mutex;//
-std::vector<std::unique_ptr<std::condition_variable>> Executive::cond; //TODO: capire come fare ad inizializzare il vettore di cond
+std::vector<std::unique_ptr<std::condition_variable>> Executive::cond;
 
 Executive::Executive(size_t num_tasks, unsigned int frame_length, unsigned int unit_duration)
 	: p_tasks(num_tasks), frame_length(frame_length), unit_time(unit_duration)
 {
+	cond.clear();
+	cond.reserve(num_tasks);
+	for (size_t i = 0; i < num_tasks; ++i) {
+		cond.push_back(std::unique_ptr<std::condition_variable>(new std::condition_variable()));
+	}
 }
 
 
@@ -46,6 +51,7 @@ void Executive::start()
 		assert(p_tasks[id].function); // Fallisce se set_periodic_task() non e' stato invocato per questo id
 		
 		p_tasks[id].thread = std::thread(&Executive::task_function, std::ref(p_tasks[id]));
+		p_tasks[id].id = id;
 		p_tasks[id].state = task_data::IDLE;
 		rt::set_affinity(p_tasks[id].thread, a);
 
@@ -71,14 +77,19 @@ void Executive::task_function(Executive::task_data & task)
 {
 	while (true)
 	{
-		std::unique_lock<std::mutex> lock(Executive::task_mutex);
-		while (task.state != task_data::PENDING)
 		{
-			Executive::cond[task.id]->wait(lock);
+			std::unique_lock<std::mutex> lock(Executive::task_mutex);
+			while (task.state != task_data::PENDING)
+			{
+				Executive::cond[task.id]->wait(lock);
+			}
+			task.state = task_data::RUNNING;
 		}
-		task.state = task_data::RUNNING;
 		task.function();
-		task.state = task_data::IDLE;
+		{
+			std::unique_lock<std::mutex> lock(Executive::task_mutex);
+			task.state = task_data::IDLE;
+		}
 	}
 }
 
@@ -103,7 +114,7 @@ void Executive::exec_function()
 			try{
 				size_t num_task = frames[frame_id][task_id];
 				// Controllo se il task che sto per schedulare è in coda fra quelli missati
-				if (std::find(deadline_miss.begin(), deadline_miss.end(), num_task) != deadline_miss.end()) {
+				if (std::find(deadline_miss.begin(), deadline_miss.end(), num_task) == deadline_miss.end()) {
 					p_tasks[num_task].state = task_data::PENDING;
 					rt::set_priority(p_tasks[num_task].thread, --p);
 					Executive::cond[num_task]->notify_one();
@@ -137,9 +148,10 @@ void Executive::exec_function()
 		}
 
 
-		for (size_t task_id = 0; task_id < frames[frame_id].size(); ++task_id)
+		for (size_t n = 0; n< frames[frame_id].size(); ++n)
 		{
-			if (p_tasks[task_id].state == task_data::RUNNING)
+			auto task_id = frames[frame_id][n];
+			if (p_tasks[task_id].state == task_data::RUNNING)	//TODO
 			{
 				deadline_miss.push_back(task_id);
 
