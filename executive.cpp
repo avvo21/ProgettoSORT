@@ -151,7 +151,7 @@ void Executive::exec_function()
 		for (size_t n = 0; n< frames[frame_id].size(); ++n)
 		{
 			auto task_id = frames[frame_id][n];
-			if (p_tasks[task_id].state == task_data::RUNNING)	//TODO
+			if (p_tasks[task_id].state == task_data::RUNNING)
 			{
 				deadline_miss.push_back(task_id);
 
