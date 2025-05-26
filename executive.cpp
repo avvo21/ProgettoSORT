@@ -11,7 +11,7 @@
 
 
 Executive::Executive(size_t num_tasks, unsigned int frame_length, unsigned int unit_duration)
-	: p_tasks(num_tasks), frame_length(frame_length), unit_time(unit_duration), cond(num_tasks)
+	: p_tasks(num_tasks), frame_length(frame_length), unit_time(unit_duration)
 {
 
 }
@@ -52,18 +52,16 @@ void Executive::start()
 	{
 		assert(p_tasks[id].function); // Fallisce se set_periodic_task() non e' stato invocato per questo id
 		
-		p_tasks[id].thread = std::thread(&Executive::task_function, std::ref(p_tasks[id]), std::ref(task_mutex), std::ref(cond[id]));
+		p_tasks[id].thread = std::thread(&Executive::task_function, std::ref(p_tasks[id]));
 		p_tasks[id].id = id;
-		p_tasks[id].state = task_data::IDLE;
+		p_tasks[id].state = task_data::IDLE;  //TODO: Lo inizializziamo ad idle nel task_data, ha poco senso mantenerlo qui
 		rt::set_affinity(p_tasks[id].thread, a);
-
-		
 		/* ... */
 	}
-
+	
 	assert(ap_task.function); // Fallisce se set_aperiodic_task() non e' stato invocato
 
-	ap_task.thread = std::thread(&Executive::task_function, std::ref(ap_task), std::ref(task_mutex), std::ref(cond[ap_task.id]));
+	ap_task.thread = std::thread(&Executive::task_function, std::ref(ap_task));
 	
 	exec_thread = std::thread(&Executive::exec_function, this);
 	rt::set_priority(exec_thread, p);
@@ -101,21 +99,21 @@ void Executive::ap_task_request()
 	 */
 }
 
-void Executive::task_function(Executive::task_data & task, std::mutex & task_mutex, std::condition_variable & cond)
+void Executive::task_function(Executive::task_data & task)
 {
 	while (true)
 	{
-		{
-			std::unique_lock<std::mutex> lock(task_mutex);
+		{	//Regione Critica
+			std::unique_lock<std::mutex> lock(task.task_mutex);
 			while (task.state != task_data::PENDING)
 			{
-				cond.wait(lock);
+				task.task_cond.wait(lock);
 			}
 			task.state = task_data::RUNNING;
 		}
 		task.function();
-		{
-			std::unique_lock<std::mutex> lock(task_mutex);
+		{	//Regione Critica
+			std::unique_lock<std::mutex> lock(task.task_mutex);
 			task.state = task_data::IDLE;
 		}
 	}
@@ -144,9 +142,12 @@ void Executive::exec_function()
 				size_t num_task = frames[frame_id][task_id];
 				// Controllo se il task che sto per schedulare è in coda fra quelli missati
 				if (std::find(deadline_miss.begin(), deadline_miss.end(), num_task) == deadline_miss.end()) {
-					p_tasks[num_task].state = task_data::PENDING; //TODO: lokkare
+					{	//Regione Critica
+						std::unique_lock<std::mutex> lock(p_tasks[num_task].task_mutex);
+						p_tasks[num_task].state = task_data::PENDING;
+					}
 					rt::set_priority(p_tasks[num_task].thread, --p);
-					Executive::cond[num_task]->notify_one();
+					p_tasks[num_task].task_cond.notify_one();
 				}
 
 			} catch(rt::permission_error &e){
@@ -195,27 +196,35 @@ void Executive::exec_function()
 		/* Controllo delle deadline ... */
 		for (int i = (int)deadline_miss.size() - 1; i >= 0; --i)
 		{
-			if (p_tasks[deadline_miss[i]].state != task_data::RUNNING) //TODO: lokkare
-			{
-				deadline_miss.erase(deadline_miss.begin() + i);
+			size_t task_id = deadline_miss[i];
+			{	//Regione Criticsa
+				std::unique_lock<std::mutex> lock(p_tasks[task_id].task_mutex);
+				if (p_tasks[task_id].state != task_data::RUNNING)
+				{
+					deadline_miss.erase(deadline_miss.begin() + i);
+				}
 			}
+
 		}
 
 
 		for (size_t n = 0; n< frames[frame_id].size(); ++n)
 		{
-			auto task_id = frames[frame_id][n];
-			if (p_tasks[task_id].state == task_data::RUNNING)	////TODO: lokkare
-			{
-				#ifdef VERBOSE
-				std::cerr << "Task n." << task_id << " ha missato la deadline!" << std::endl;
-				#endif
+			size_t task_id = frames[frame_id][n];
+			{	//Regione Critica
+				std::unique_lock<std::mutex> lock(p_tasks[task_id].task_mutex);
+				if (p_tasks[task_id].state == task_data::RUNNING)
+				{
+					#ifdef VERBOSE
+					std::cerr << "Task n." << task_id << " ha missato la deadline!" << std::endl;
+					#endif
 
-				deadline_miss.push_back(task_id);
+					deadline_miss.push_back(task_id);
 
-			} else if (p_tasks[task_id].state == task_data::PENDING) //TODO: lokkare
-			{
-				p_tasks[task_id].state = task_data::IDLE; // se il task non è ancora entrato in esecuzione per colpa di una deadline lo abortisco
+				} else if (p_tasks[task_id].state == task_data::PENDING)
+				{
+					p_tasks[task_id].state = task_data::IDLE; // se il task non è ancora entrato in esecuzione per colpa di una deadline lo abortisco
+				}
 			}
 		}
 		
