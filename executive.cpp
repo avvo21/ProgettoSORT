@@ -1,6 +1,7 @@
 #include <cassert>
 #include <iostream>
 
+
 #define VERBOSE
 
 #include <algorithm>
@@ -44,6 +45,7 @@ void Executive::add_frame(std::vector<size_t> frame) // frame contine gli indici
 
 void Executive::start()
 {
+
 	rt::priority p(rt::priority::rt_max);
 	rt::affinity a;
 	a.set(1);
@@ -51,10 +53,8 @@ void Executive::start()
 	for (size_t id = 0; id < p_tasks.size(); ++id)
 	{
 		assert(p_tasks[id].function); // Fallisce se set_periodic_task() non e' stato invocato per questo id
-		
 		p_tasks[id].thread = std::thread(&Executive::task_function, std::ref(p_tasks[id]));
 		p_tasks[id].id = id;
-		p_tasks[id].state = task_data::IDLE;  //TODO: Lo inizializziamo ad idle nel task_data, ha poco senso mantenerlo qui
 		rt::set_affinity(p_tasks[id].thread, a);
 		/* ... */
 	}
@@ -62,10 +62,25 @@ void Executive::start()
 	assert(ap_task.function); // Fallisce se set_aperiodic_task() non e' stato invocato
 
 	ap_task.thread = std::thread(&Executive::task_function, std::ref(ap_task));
+	ap_task.requested = false; // Inizializzo la richiesta a false
+	rt::set_affinity(ap_task.thread, a);
+
+	for (size_t k = 0; k < frames.size(); ++k)
+	{
+		auto frame = frames[k];
+		slack[k] = frame_length;
+
+		for (size_t i = 0; i < frame.size(); ++i)
+		{
+				slack[k] -= p_tasks[frame[i]].wcet;
+		}
+	}
 	
 	exec_thread = std::thread(&Executive::exec_function, this);
 	rt::set_priority(exec_thread, p);
 	rt::set_affinity(exec_thread, a);
+
+
 	/* ... */
 }
 	
@@ -79,6 +94,9 @@ void Executive::wait()
 
 void Executive::ap_task_request()
 {
+	std::unique_lock<std::mutex> lock(ap_task.task_mutex);
+	ap_task.requested = true;
+
 	/* ...
 	 * Si deve fare in modo che l'exec sappia che è stata fatta una request, bool, per poi attivare la politica dell'aperiodico
 	 * alla fine dell'esecuzione si riporta a false
@@ -91,9 +109,8 @@ void Executive::ap_task_request()
 	 *
 	 * Controllare la specifica di errore nel caso ci sia una richiesta troppo frequente
 	 *
-	 *if ap_task.state == task_data::IDLE
-	 *ap_task.state = task_data::PENDING;
-	 *ap_task.function
+	 * std::unique_lock<std::mutex> lock(ap_task.task_mutex);
+	 * if (ap_task.state == task_data::)
 	 *
 	 *
 	 */
@@ -132,10 +149,29 @@ void Executive::exec_function()
 		#ifdef VERBOSE
 		std::cout << "*** Frame n." << frame_id << (frame_id == 0 ? " ******" : "") << std::endl;
 		#endif
-		/* Rilascio dei task periodici del frame corrente ... */
-		rt::priority p(rt::priority::rt_max); //priorità che verrà decrementatata ed assegnata ai task
-		unsigned int wCetframe = 0;
 
+		rt::priority p(rt::priority::rt_max); //priorità che verrà decrementatata ed assegnata ai task
+
+		/* Rilascio dei task aperiodici del frame corrente ... */
+		if (slack[frame_id] > 0)
+		{
+			{// Regione Critica
+				std::unique_lock<std::mutex> lock(ap_task.task_mutex);
+				if (ap_task.state == task_data::IDLE && ap_task.requested)
+				{
+					ap_task.state = task_data::PENDING;
+					ap_task.task_cond.notify_one();
+					rt::set_priority(ap_task.thread, p-1);
+				}
+				else if (ap_task.state == task_data::RUNNING && ap_task.requested)
+					rt::set_priority(ap_task.thread, p-1);
+			}
+			std::this_thread::sleep_until(clock + (slack[frame_id] * unit_time));
+			rt::set_priority(ap_task.thread, rt::priority::rt_min);
+		}
+
+
+		/* Rilascio dei task periodici del frame corrente ... */
 		for (size_t task_id = 0; task_id < frames[frame_id].size(); ++task_id)
 		{
 			try{
@@ -153,7 +189,6 @@ void Executive::exec_function()
 			} catch(rt::permission_error &e){
 				std::cout << "Failed to set priority: " << e.what() << std::endl;
 			}
-			wCetframe += p_tasks[frames[frame_id][task_id]].wcet;
 		}
 
 		for (size_t i = 0; i < deadline_miss.size(); ++i)
@@ -175,7 +210,7 @@ void Executive::exec_function()
 		 * e lo metto a priorità massima
 		 */
 		/*
-		 *if(ap_task.state == task_data == RUNNiNG){
+		 *if(ap_task.state == task_data::RUNNiNG){
 		 *rt::set_priority(ap_task.thread, rt::priority::rt_max);
 		 *}
 		 *clock += wCetframe * unit_time;
@@ -190,8 +225,9 @@ void Executive::exec_function()
 		 */
 
 		/* Attesa fino al prossimo inizio frame ... */
-		clock += frame_length * unit_time;	//clock +=  frame_length * unit_time-wCetframe * unit_time;
+		clock += frame_length * unit_time;	//clock += frame_length * unit_time-wCetframe * unit_time;
 		std::this_thread::sleep_until(clock);	//aggiornare con
+
 
 		/* Controllo delle deadline ... */
 		for (int i = (int)deadline_miss.size() - 1; i >= 0; --i)
@@ -211,13 +247,12 @@ void Executive::exec_function()
 		for (size_t n = 0; n< frames[frame_id].size(); ++n)
 		{
 			size_t task_id = frames[frame_id][n];
-			{	//Regione Critica
+			{	//Regione Critica;
 				std::unique_lock<std::mutex> lock(p_tasks[task_id].task_mutex);
 				if (p_tasks[task_id].state == task_data::RUNNING)
 				{
-					#ifdef VERBOSE
+					//std::cout<<"Sono qui"<<std::endl;
 					std::cerr << "Task n." << task_id << " ha missato la deadline!" << std::endl;
-					#endif
 
 					deadline_miss.push_back(task_id);
 
@@ -227,6 +262,8 @@ void Executive::exec_function()
 				}
 			}
 		}
+
+		//TODO: Controllo se l'aperiodico ha finito l'esecuzione
 		
 		if (++frame_id == frames.size())
 		{

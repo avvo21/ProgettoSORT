@@ -65,6 +65,8 @@ class Executive
 
 			std::condition_variable task_cond;
 
+			bool requested;
+
 			/* ... */
 		};
 		
@@ -75,14 +77,11 @@ class Executive
 		std::thread exec_thread;
 		
 		std::vector< std::vector<size_t> > frames; // frames è tutta la schedule
-		//std::mutex task_mutex;
-
-		//std::vector<std::unique_ptr<std::condition_variable>> cond;
 		
 		const unsigned int frame_length; // lunghezza del frame (in quanti temporali)
 		const std::chrono::milliseconds unit_time; // durata dell'unita di tempo (quanto temporale)
 
-
+		std::vector<unsigned int> slack; // slack per ogni frame, in quanti temporali
 		/* ... */
 		
 		static void task_function(task_data & task);
