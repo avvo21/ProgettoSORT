@@ -68,7 +68,8 @@ void Executive::start()
 	for (size_t k = 0; k < frames.size(); ++k)
 	{
 		auto frame = frames[k];
-		slack[k] = frame_length;
+		slack.push_back(frame_length);
+		//slack[k] = frame_length;
 
 		for (size_t i = 0; i < frame.size(); ++i)
 		{
@@ -160,16 +161,16 @@ void Executive::exec_function()
 				if (ap_task.state == task_data::IDLE && ap_task.requested)
 				{
 					ap_task.state = task_data::PENDING;
+					ap_task.requested = false;
 					ap_task.task_cond.notify_one();
 					rt::set_priority(ap_task.thread, p-1);
 				}
-				else if (ap_task.state == task_data::RUNNING && ap_task.requested)
+				else if (ap_task.state == task_data::RUNNING)
 					rt::set_priority(ap_task.thread, p-1);
 			}
 			std::this_thread::sleep_until(clock + (slack[frame_id] * unit_time));
 			rt::set_priority(ap_task.thread, rt::priority::rt_min);
 		}
-
 
 		/* Rilascio dei task periodici del frame corrente ... */
 		for (size_t task_id = 0; task_id < frames[frame_id].size(); ++task_id)
@@ -199,30 +200,6 @@ void Executive::exec_function()
 			}
 			rt::set_priority(p_tasks[deadline_miss[i]].thread, p);
 		}
-		//TODO: Capire se nella politica dobbiamo mettere prima il task missed o l'aperiodico
-
-		//Si potrebbe fare eseguire l'aperiodico per il tempo assegnato ad un priorità alta per poi, tramite wait.until,
-		//richiamare l'exec function per rilasciare i task periodici a priorità alta abbassando quella del task aperiodico
-
-		/* Rilascio del task aperiodico ...
-		 * guardare se wCetframe + wcet_ap <= frame_length
-		 * se sì, allora rilascio il task aperiodico
-		 * e lo metto a priorità massima
-		 */
-		/*
-		 *if(ap_task.state == task_data::RUNNiNG){
-		 *rt::set_priority(ap_task.thread, rt::priority::rt_max);
-		 *}
-		 *clock += wCetframe * unit_time;
-		*std::this_thread::sleep_until(clock);
-		 * if (ap_task.state == task_data == RUNNiNG){
-		 * if (p-1 >= rt::priority::rt_min)
-		 *	--p;
-		 *rt::set_priority(ap_task.thread, p);
-		 *
-		 *
-		 *
-		 */
 
 		/* Attesa fino al prossimo inizio frame ... */
 		clock += frame_length * unit_time;	//clock += frame_length * unit_time-wCetframe * unit_time;
@@ -240,9 +217,7 @@ void Executive::exec_function()
 					deadline_miss.erase(deadline_miss.begin() + i);
 				}
 			}
-
 		}
-
 
 		for (size_t n = 0; n< frames[frame_id].size(); ++n)
 		{
@@ -251,8 +226,7 @@ void Executive::exec_function()
 				std::unique_lock<std::mutex> lock(p_tasks[task_id].task_mutex);
 				if (p_tasks[task_id].state == task_data::RUNNING)
 				{
-					//std::cout<<"Sono qui"<<std::endl;
-					std::cerr << "Task n." << task_id << " ha missato la deadline!" << std::endl;
+					std::cerr << "\033[31mTask n." << task_id << " ha missato la deadline!\033[0m" << std::endl;
 
 					deadline_miss.push_back(task_id);
 
@@ -263,7 +237,16 @@ void Executive::exec_function()
 			}
 		}
 
-		//TODO: Controllo se l'aperiodico ha finito l'esecuzione
+		//Controllo Deadline Aperiodici
+		{	//Regione Critica
+			std::unique_lock<std::mutex> lock(ap_task.task_mutex);
+			if (ap_task.state == task_data::RUNNING && ap_task.requested)
+			{
+				std::cerr << "\033[31mIl Task Aperiodico ha missato la deadline!\033[0m" << std::endl;
+				ap_task.requested = false; //Questa politica abortisce il nuovo task aperiodico se il precedente ha missato la deadline
+			}
+		}
+
 		
 		if (++frame_id == frames.size())
 		{
