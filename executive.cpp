@@ -63,6 +63,7 @@ void Executive::start()
 
 	ap_task.thread = std::thread(&Executive::task_function, std::ref(ap_task));
 	ap_task.requested = false; // Inizializzo la richiesta a false
+	rt::set_priority(ap_task.thread, rt::priority::rt_min);
 	rt::set_affinity(ap_task.thread, a);
 
 	for (size_t k = 0; k < frames.size(); ++k)
@@ -156,7 +157,8 @@ void Executive::exec_function()
 		/* Rilascio dei task aperiodici del frame corrente ... */
 		if (slack[frame_id] > 0)
 		{
-			{// Regione Critica
+			{
+				// Regione Critica
 				std::unique_lock<std::mutex> lock(ap_task.task_mutex);
 				if (ap_task.state == task_data::IDLE && ap_task.requested)
 				{
@@ -164,11 +166,14 @@ void Executive::exec_function()
 					ap_task.requested = false;
 					ap_task.task_cond.notify_one();
 					rt::set_priority(ap_task.thread, p-1);
+					std::this_thread::sleep_until(clock + (slack[frame_id] * unit_time));
 				}
 				else if (ap_task.state == task_data::RUNNING)
+				{
 					rt::set_priority(ap_task.thread, p-1);
+					std::this_thread::sleep_until(clock + (slack[frame_id] * unit_time));
+				}
 			}
-			std::this_thread::sleep_until(clock + (slack[frame_id] * unit_time));
 			rt::set_priority(ap_task.thread, rt::priority::rt_min);
 		}
 
@@ -232,6 +237,7 @@ void Executive::exec_function()
 
 				} else if (p_tasks[task_id].state == task_data::PENDING)
 				{
+					std::cerr << "\033[31mTask n." << task_id << " ha missato la deadline!\033[0m" << std::endl;
 					p_tasks[task_id].state = task_data::IDLE; // se il task non è ancora entrato in esecuzione per colpa di una deadline lo abortisco
 				}
 			}

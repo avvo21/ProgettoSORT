@@ -51,7 +51,7 @@ void task5()
 void task_ap()
 {
 	std::cout << "\033[32mIl task AP viene rilasciato\033[0m" << std::endl;
-	busy_wait(42);
+	busy_wait(200);
 	std::cout << "\033[32mIl task AP ha terminato\033[0m" << std::endl;
 }
 
@@ -59,7 +59,7 @@ int main()
 {
 	busy_wait_init();
 
-	Executive exec(6, 5);
+	Executive exec(6, 5, 50);
 
 	exec.set_periodic_task(0, task0, 2);
 	exec.set_periodic_task(1, task1, 1);
