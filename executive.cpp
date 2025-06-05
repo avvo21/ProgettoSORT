@@ -1,4 +1,6 @@
-#include <cassert>
+//	nome: Gabriele	cognome: Incardona	matricola: 375448
+//	nome: Andrea	cognome: Veronesi	matricola: 380422
+#include <assert>
 #include <iostream>
 
 
@@ -40,7 +42,6 @@ void Executive::add_frame(std::vector<size_t> frame) // frame contine gli indici
 	
 	frames.push_back(frame); // frames è tutta la schedule
 
-	/* ... */
 }
 
 void Executive::start()
@@ -56,13 +57,14 @@ void Executive::start()
 		p_tasks[id].thread = std::thread(&Executive::task_function, std::ref(p_tasks[id]));
 		p_tasks[id].id = id;
 		rt::set_affinity(p_tasks[id].thread, a);
-		/* ... */
+		
 	}
 	
 	assert(ap_task.function); // Fallisce se set_aperiodic_task() non e' stato invocato
 
 	ap_task.thread = std::thread(&Executive::task_function, std::ref(ap_task));
 	ap_task.requested = false; // Inizializzo la richiesta a false
+
 	rt::set_priority(ap_task.thread, rt::priority::rt_min);
 	rt::set_affinity(ap_task.thread, a);
 
@@ -81,9 +83,7 @@ void Executive::start()
 	exec_thread = std::thread(&Executive::exec_function, this);
 	rt::set_priority(exec_thread, p);
 	rt::set_affinity(exec_thread, a);
-
-
-	/* ... */
+	
 }
 	
 void Executive::wait()
@@ -99,23 +99,6 @@ void Executive::ap_task_request()
 	std::unique_lock<std::mutex> lock(ap_task.task_mutex);
 	ap_task.requested = true;
 
-	/* ...
-	 * Si deve fare in modo che l'exec sappia che è stata fatta una request, bool, per poi attivare la politica dell'aperiodico
-	 * alla fine dell'esecuzione si riporta a false
-	 *
-	 * Usare un bool per una richiesta di aperiodico e fare in modo di capire se un task aperiodico è già in esecuzione senza bool
-	 *
-	 * Qui dobbiamo semplicemente fare un lock e settare la variabile della richiesta a true
-	 *
-	 * Creare un lock per la manipolazione del bool della richiesta aperiodica
-	 *
-	 * Controllare la specifica di errore nel caso ci sia una richiesta troppo frequente
-	 *
-	 * std::unique_lock<std::mutex> lock(ap_task.task_mutex);
-	 * if (ap_task.state == task_data::)
-	 *
-	 *
-	 */
 }
 
 void Executive::task_function(Executive::task_data & task)
@@ -144,7 +127,7 @@ void Executive::exec_function()
 	auto clock = std::chrono::high_resolution_clock::now();
 	std::vector<size_t> deadline_miss;
 
-	/* ... */
+	
 
 	while (true)
 	{
@@ -155,7 +138,7 @@ void Executive::exec_function()
 		rt::priority p(rt::priority::rt_max); //priorità che verrà decrementatata ed assegnata ai task
 
 		/* Rilascio dei task aperiodici del frame corrente ... */
-		if (slack[frame_id] > 0)
+		if (slack[frame_id] > 0 && (ap_task.requested || ap_task.state == task_data::RUNNING)) //se non c'è slack time o se non è stato rilasciato un nuovo task aperiodico o se un task aperiodico non è già in esecuzione, non entro nell'if
 		{
 			{
 				// Regione Critica
@@ -166,12 +149,12 @@ void Executive::exec_function()
 					ap_task.requested = false;
 					ap_task.task_cond.notify_one();
 					rt::set_priority(ap_task.thread, p-1);
-					std::this_thread::sleep_until(clock + (slack[frame_id] * unit_time));
+					std::this_thread::sleep_until(clock + (slack[frame_id] * unit_time));	//l'executive si risveglia dopo lo slack time per settare la priorità a min del task aperiodico
 				}
 				else if (ap_task.state == task_data::RUNNING)
 				{
 					rt::set_priority(ap_task.thread, p-1);
-					std::this_thread::sleep_until(clock + (slack[frame_id] * unit_time));
+					std::this_thread::sleep_until(clock + (slack[frame_id] * unit_time));	
 				}
 			}
 			rt::set_priority(ap_task.thread, rt::priority::rt_min);
@@ -208,7 +191,7 @@ void Executive::exec_function()
 
 		/* Attesa fino al prossimo inizio frame ... */
 		clock += frame_length * unit_time;	//clock += frame_length * unit_time-wCetframe * unit_time;
-		std::this_thread::sleep_until(clock);	//aggiornare con
+		std::this_thread::sleep_until(clock);
 
 
 		/* Controllo delle deadline ... */
